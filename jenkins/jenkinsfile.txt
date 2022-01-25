@@ -1,0 +1,53 @@
+pipeline {
+  environment {
+    BUILD_NAME = "node-app"    
+    AWS_ACCOUNT_ID="943661087315"
+    IMAGE_NAME = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${BUILD_NAME}"
+    IMAGE_TAG = "$BUILD_NUMBER"
+    AWS_DEFAULT_REGION = "us-east-1"
+    DOCKER_RUN = "docker run -p 8080:8081 -d --name node-app $IMAGE_NAME:$IMAGE_TAG"
+    KILL_CONTAINER= "docker rm -f node-app"
+
+  }
+  agent any
+  stages {
+    stage('Cloning node app from github') {
+      steps {
+          git branch:'main', url: 'https://github.com/TechExhibeo/test-nodeapp-1-task.git'
+
+      }
+    }
+    stage('Building Docker image') {
+      steps{
+        script {
+          dockerImage = docker.build "${IMAGE_NAME}:${IMAGE_TAG}"
+        }
+      }
+    }
+    
+    stage('Pushing to AWS ECR') {
+     steps{  
+         script {
+                sh "aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
+                sh "docker push ${IMAGE_NAME}:${IMAGE_TAG}"
+         }
+        }
+      }
+
+    stage('Remove unused docker image after ECR push') {
+      steps{
+        sh "docker rmi $IMAGE_NAME:$IMAGE_TAG"
+      }
+    }
+
+      stage('Run Container on Development Server'){
+        steps{
+          sshagent(['ssh_key']) {
+          sh "ssh -o StrictHostKeyChecking=no ubuntu@10.0.1.119 ${KILL_CONTAINER}"
+          sh "ssh -o StrictHostKeyChecking=no ubuntu@10.0.1.119 ${DOCKER_RUN}"
+         }
+     }
+   }
+
+  }
+}
